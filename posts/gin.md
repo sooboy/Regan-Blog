@@ -148,6 +148,8 @@ func (c *Context) Next() {
 
  `Context`可以中断`HandlerChain`的执行。比如，用户权限未认证。
 
+ 做到极致，我们可以这样：[gin 代码](../src/gin/demo01/main.go)
+
  ## 再说下 `tree`
 
  ```golang
