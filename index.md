@@ -1,5 +1,10 @@
-## 这里可能会记录：
+## 记录一些不成熟的想法
 
-一些不成熟的想法、一些自以为是的技术解读
+- 作者：Regan
+- Email: sooboy#foxmail.com
+- 技术栈： Golang、Typescript、node、Rust
 
-### 
+
+### 技术
+
+- [Golang的gin框架源码](./posts/gin.md)
