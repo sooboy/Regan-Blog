@@ -5,7 +5,9 @@
 ## 如何开始?
 ![how to start it ?](../assets/BB920F6D-7F4A-4E58-8C03-9D8D3BF3C18F.png)
 
-最初的最初 调用`gin.Default()`函数生成默认引擎，也就是*Engine结构体。签名如下：![Engine签名](../assets/how_to_start_it.png)
+起点是 调用`gin.Default()`函数生成默认引擎，也就是*Engine结构体。
+
+签名如下：![Engine签名](../assets/how_to_start_it.png)
 
 简单概括里面功能：
 - 根据当前环境选择打印warnning信息
@@ -13,14 +15,14 @@
 - 默认使用 `log`、 `recovery` 中间件
 - 返回 `*Engine`
 
-往后使用`Engine`注册一个`/ping`路径 并绑定一个`HandlerFunc`.
+然后使用`Engine`注册一个`/ping`路径 并绑定一个`HandlerFunc`.
 
 最后 `Run(:addr)`启动整个引擎
 
 ## 那故事应该从`Engine`说起了！
 ![Engine](../assets/engine_struct.png)
 
-属性字段中去掉标记状态的量，以下几个比较重要：
+以下几个比较重要：
 - `RouterGroup` 管理路由组，实现`IRoutes`以及`IRouter`接口
 - `HTMLRender` 模版引擎，默认使用golang下`template`作为模版引擎
 - `trees`      存储`路径`以及对应`HandlerChain`详细信息
@@ -29,21 +31,32 @@
 ## 先说 `RouterGroup`
 `RouterGroup`在`Engine` 里是内嵌结构体，它是这个样子的：
 ![RouterGroup](../assets/RouterGroup.png)
+
 里面比较重要是`HandlerChain`:
+
 ![HandlerChain](../assets/HandlerChain.png)
+
 `RouterGroup`实现了一下接口：
+
 ![IRoute](../assets/IRoute.png)
 
-因为`RouterGroup`是内嵌在`Engine`里的所以它具备了`Use`,`Get`等方法。这些方法本质都是在组合`HandlerChain`、修改`basePath`.
+因为`RouterGroup`是内嵌在`Engine`里的所以 `Engine`具备了`Use`,`Get`等方法。
+
+这些方法本质都是在生成`HandlerChain`和对应路径 保存在 trees里面
 看下面例子：
 
 ### Example
 ```golang
     r := gin.New()
 	r.Use(HandlerFn1, HandlerFn2)
+	r.Get("/",HandlerFn3,HandlerFn4,HandlerIndex)
+    admin := r.Group("/admin",HandlerAdminLimit1,HandlerAdminLimit2)
+        .Get("/money",HandlerMoneyLimit,HandlerMoney)
+        .Get("/vote",HanlderVoteLimit,HandlerVote)
+        .Get("/email",HanlderEmailLimit,HandlerEmail)
 ```
 
-
+#### `Use 使用`
 ```golang
 func (group *RouterGroup) Use(middleware ...HandlerFunc) IRoutes {
 	group.Handlers = append(group.Handlers, middleware...)
@@ -51,15 +64,9 @@ func (group *RouterGroup) Use(middleware ...HandlerFunc) IRoutes {
 }
 ```
 最初`engine.Handlers`是空的,添加了`HandlerFn1`,`HandlerFn2`后=>[HandlerFn1,HandlerFn2].`basePath`为‘/’
-继续添加一下代码
-```golang
-   r.Get("/",HandlerFn3,HandlerFn4,HandlerIndex)
-   admin := r.Group("/admin",HandlerAdminLimit1,HandlerAdminLimit2)
-        .Get("/money",HandlerMoneyLimit,HandlerMoney)
-        .Get("/vote",HanlderVoteLimit,HandlerVote)
-        .Get("/email",HanlderEmailLimit,HandlerEmail)
-```
-当执行了`r.Get("/",HandlerFn3,HandlerFn4,HandlerIndex)`
+
+
+#### 当执行了`r.Get("/",HandlerFn3,HandlerFn4,HandlerIndex)`
 ```golang
 // GET is a shortcut for router.Handle("GET", path, handle).
 func (group *RouterGroup) GET(relativePath string, handlers ...HandlerFunc) IRoutes {
@@ -85,8 +92,7 @@ func (group *RouterGroup) combineHandlers(handlers HandlersChain) HandlersChain 
 }
 
 ```
-将`RouterGroup`里面的`basePath`拼接当前路径
-将`RouterGroup`里面的`Handlers`以及当前传入的`HandlerChain`copy到新的`HandlerChain`下
+拼接`RouterGroup`路径和HandlerChain,存在`trees` 里面
 
 
 ```javascript
@@ -97,8 +103,10 @@ func (group *RouterGroup) combineHandlers(handlers HandlersChain) HandlersChain 
 ```
 将这样的信息（还有其他附加信息）添加到`engine.trees`里。
 
-当执行`   admin := r.Group("/admin",HandlerAdminLimit1,HandlerAdminLimit2)`
-则`admin` 这个新的`RouterGroup`的信息是这样
+#### 当执行`   admin := r.Group("/admin",HandlerAdminLimit1,HandlerAdminLimit2)`
+
+`admin` 这个新的`RouterGroup`的信息是这样
+
 ```javascript
 {
     basePath:"/admin",
@@ -106,7 +114,7 @@ func (group *RouterGroup) combineHandlers(handlers HandlersChain) HandlersChain 
 }
 ```
 
-执行了`.Get("/money",HandlerMoneyLimit,HandlerMoney)`
+#### 执行了`.Get("/money",HandlerMoneyLimit,HandlerMoney)`
 
 
 将`admin`里面的`basePath`拼接当前路径
