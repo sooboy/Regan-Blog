@@ -158,7 +158,7 @@ func (c *Context) Next() {
 
  做到极致，我们可以这样：[gin 代码](../src/gin/demo01/main.go)
 
- ```Go
+ ```golang
  package main
 
 import (
