@@ -1,9 +1,10 @@
-## 记录一些不成熟的想法
+## 构造一个世界。
 
 - 作者：Regan
 - Email: sooboy#foxmail.com
 - 技术栈： Golang、Typescript、node、Rust
 
+这里记录了一些不成熟的想法。
 
 ### 技术
 
