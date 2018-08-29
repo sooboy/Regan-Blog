@@ -159,96 +159,124 @@ func (c *Context) Next() {
  做到极致，我们可以这样：[gin 代码](../src/gin/demo01/main.go)
 
  ```golang
- package main
+package main
 
 import (
 	"fmt"
+	"net/http"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 )
 
-type MuxteMap struct{}
+const (
+	ERROR_AUTH_LIMIT = "用户权限认证失败！"
 
-func (m *MuxteMap) Get(key string)                    {}
-func (m *MuxteMap) Set(key string, value interface{}) {}
+	STORE = "fns"
+)
 
-type UnitFunc func(m *MuxteMap)
-type UnitFuncs []UnitFuncs
+// UnitFunc 单位函数
+type UnitFunc func(m *sync.Map)
 
+// UnitFuncs 单位函数集合
+type UnitFuncs []UnitFunc
+
+func (u *UnitFuncs) Push(item UnitFunc) {
+	*u = append(*u, item)
+}
+
+// Protocol 协议层
+type Protocol struct {
+	Code int         `json:"code"`
+	Msg  string      `json:"msg"`
+	Data interface{} `json:"data"`
+}
+
+// SetData 设置内容
+func (p *Protocol) SetData(data interface{}) *Protocol {
+	p.Data = data
+	return p
+}
+
+func (p *Protocol) Error(code int, msg string) *Protocol {
+	p.Code = code
+	p.Msg = msg
+	return p
+}
+
+// AuthLimit 认证
 func AuthLimit() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		//  这里处理业务需求
 		fmt.Println("this is in AuthLimit")
+		if c.Query("auth") == "" {
+			c.AbortWithStatusJSON(http.StatusOK, (&Protocol{}).Error(http.StatusOK, ERROR_AUTH_LIMIT))
+		}
 	}
 }
 
+// News 获取新闻
 func News() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		//  这里处理业务需求
 		fmt.Println("this is in News")
-		c.Set(
-			"unitFn",
-			setUnitFn(c, func(m *MuxteMap) {
-				// 获取数据
-				m.Set("some key", "some Value")
-			}),
-		)
+		setUnitFn(c, func(m *sync.Map) {
+			fmt.Println("this is News UnitFn")
+		})
 	}
 }
 
+// Spot 获取期货
 func Spot() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		//  这里处理业务需求
 		fmt.Println("this is in Spot")
-		c.Set(
-			"unitFn",
-			setUnitFn(c, func(m *MuxteMap) {
-				// 获取数据
-				m.Set("some key", "some Value")
-			}),
-		)
+		setUnitFn(c, func(m *sync.Map) {
+			fmt.Println("this is Spot UnitFn")
+		})
 	}
 }
 
+// Future 获取期货
 func Future() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		//  这里处理业务需求
 		fmt.Println("this is in Future")
-		c.Set(
-			"unitFn",
-			setUnitFn(c, func(m *MuxteMap) {
-				// 获取数据
-				m.Set("some key", "some Value")
-			}),
-		)
+		setUnitFn(c, func(m *sync.Map) {
+			fmt.Println("this is Future UnitFn")
+		})
 	}
 }
 
+// Vote 获取投票
 func Vote() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		//  这里处理业务需求
 		fmt.Println("this is in Future")
-		c.Set(
-			"unitFn",
-			setUnitFn(c, func(m *MuxteMap) {
-				// 获取数据
-				m.Set("some key", "some Value")
-			}),
-		)
+		setUnitFn(c, func(m *sync.Map) {
+			fmt.Println("this is Vote UnitFn")
+
+		})
 	}
 }
 
-func HTML() gin.HandlerFunc {
+// HTML  使用HTML 展示数据
+func String(text string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		//  这里处理业务需求
-		fmt.Println("this is in HTML")
+		fmt.Println("this is in HTML. String is  :", text)
+		handlerChain := getUnitFn(c)
+		parallel(handlerChain, &sync.Map{})
+		c.String(http.StatusOK, text)
 	}
 }
 
+// JSON 使用JSON展示数据
 func JSON() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		//  这里处理业务需求
 		fmt.Println("this is in JSON")
+		c.JSON(http.StatusOK, (&Protocol{}).SetData("Hello testing."))
 	}
 }
 
@@ -257,8 +285,8 @@ func main() {
 
 	admin := engine.Group("/admin", AuthLimit())
 	{
-		admin.GET("/index", News(), Spot(), Future(), HTML())
-		admin.GET("/vote", News(), Spot(), Vote(), HTML())
+		admin.GET("/index", News(), Spot(), Future(), String("index is ok"))
+		admin.GET("/vote", News(), Spot(), Vote(), String("vote is ok alse"))
 	}
 
 	api := engine.Group("/api", AuthLimit())
@@ -268,9 +296,40 @@ func main() {
 	engine.Run(":8080")
 }
 
-func setUnitFn(c *gin.Context, unit UnitFunc) UnitFuncs {
-	return UnitFuncs{}
+func setUnitFn(c *gin.Context, unit UnitFunc) {
+	var handlerChain UnitFuncs
+	if fns, exites := c.Get(STORE); exites {
+		handlerChain = fns.(UnitFuncs)
+		handlerChain.Push(unit)
+	} else {
+		handlerChain = make(UnitFuncs, 0)
+		handlerChain.Push(unit)
+	}
+	c.Set(STORE, handlerChain)
 }
+
+func getUnitFn(c *gin.Context) UnitFuncs {
+	var handlerChain UnitFuncs
+	if fns, exites := c.Get(STORE); exites {
+		handlerChain = fns.(UnitFuncs)
+	} else {
+		handlerChain = make(UnitFuncs, 0)
+	}
+	return handlerChain
+}
+
+func parallel(tasks UnitFuncs, m *sync.Map) {
+	var group = &sync.WaitGroup{}
+	for i := 0; i < len(tasks); i++ {
+		group.Add(1)
+		go func(i int) {
+			tasks[i](m)
+			group.Done()
+		}(i)
+	}
+	group.Wait()
+}
+
  ```
 
  ## 再说下 `tree`
