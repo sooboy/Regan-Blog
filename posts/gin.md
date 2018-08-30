@@ -181,8 +181,9 @@ type UnitFunc func(m *sync.Map)
 // UnitFuncs 单位函数集合
 type UnitFuncs []UnitFunc
 
-func (u *UnitFuncs) Push(item UnitFunc) {
+func (u *UnitFuncs) Push(item UnitFunc) *UnitFuncs {
 	*u = append(*u, item)
+	return u
 }
 
 // Protocol 协议层
@@ -276,10 +277,9 @@ func Parallel(handlers ...gin.HandlerFunc) gin.HandlerFunc {
 			handler(c)
 		}
 		var tasks = getUnitFn(c)
-		parallel := tasks[len(tasks)-len(handlers):]
-		tasks_origin := tasks[:len(tasks)-len(handlers)]
-		fmt.Println(len(tasks), len(parallel), len(handlers))
+		caption := len(tasks) - len(handlers) + 1
 
+		parallel := tasks[len(tasks)-len(handlers):]
 		parallelTask := func(m *sync.Map) {
 			var group = &sync.WaitGroup{}
 			for i := 0; i < len(parallel); i++ {
@@ -292,8 +292,11 @@ func Parallel(handlers ...gin.HandlerFunc) gin.HandlerFunc {
 			group.Wait()
 			fmt.Println("Parallel is Done")
 		}
-		tasks_origin.Push(parallelTask)
-		c.Set(STORE, tasks_origin)
+
+		var handlerchain = make(UnitFuncs, caption)
+		copy(handlerchain, tasks[:len(tasks)-len(handlers)])
+		copy(handlerchain[len(tasks)-len(handlers):], *(&UnitFuncs{}).Push(parallelTask))
+		c.Set(STORE, handlerchain)
 	}
 }
 
@@ -304,7 +307,10 @@ func String(text string) gin.HandlerFunc {
 		fmt.Println("this is in HTML. String is  :", text)
 		handlerChain := getUnitFn(c)
 		fmt.Println(handlerChain)
-		parallel(handlerChain, &sync.Map{})
+		// parallel(handlerChain, &sync.Map{})
+		for i := 0; i < len(handlerChain); i++ {
+			handlerChain[i](&sync.Map{})
+		}
 		c.String(http.StatusOK, text)
 	}
 }
@@ -315,7 +321,10 @@ func JSON() gin.HandlerFunc {
 		//  这里处理业务需求
 		fmt.Println("this is in JSON")
 		handlerChain := getUnitFn(c)
-		parallel(handlerChain, &sync.Map{})
+		// parallel(handlerChain, &sync.Map{})
+		for i := 0; i < len(handlerChain); i++ {
+			handlerChain[i](&sync.Map{})
+		}
 		c.JSON(http.StatusOK, (&Protocol{}).SetData("Hello testing."))
 	}
 }
@@ -376,10 +385,9 @@ func parallel(tasks UnitFuncs, m *sync.Map) {
 	group.Wait()
 }
 
-
  ```
 
- ## 再说下 `tree`
+##  `tree`
 
  ```golang
 type methodTree struct {
@@ -400,6 +408,105 @@ type node struct {
 	priority  uint32
 }
  ```
+
+ 树形结构  当接受到“/admin/index” 根据node节点一步一步向下匹配，找到对应的HandlerChain执行。
+
+##  HTMLRender
+
+```golang
+type HTMLRender interface {
+	Instance(string, interface{}) Render
+}
+
+type Render interface {
+	Render(http.ResponseWriter) error
+	WriteContentType(w http.ResponseWriter)
+}
+```
+
+我们公司使用`pongo2`模版引擎。使用`pongo2gin`来适配粘合两个引擎
+
+```golang
+// Package pongo2gin is a template renderer that can be used with the Gin
+// web framework https://github.com/gin-gonic/gin it uses the Pongo2 template
+// library https://github.com/flosch/pongo2
+package pongo2gin
+
+import (
+	"net/http"
+	"path"
+
+	"github.com/flosch/pongo2"
+	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/render"
+)
+
+// RenderOptions is used to configure the renderer.
+type RenderOptions struct {
+	TemplateDir string
+	ContentType string
+}
+
+// Pongo2Render is a custom Gin template renderer using Pongo2.
+type Pongo2Render struct {
+	Options  *RenderOptions
+	Template *pongo2.Template
+	Context  pongo2.Context
+}
+
+// New creates a new Pongo2Render instance with custom Options.
+func New(options RenderOptions) *Pongo2Render {
+	return &Pongo2Render{
+		Options: &options,
+	}
+}
+
+// Default creates a Pongo2Render instance with default options.
+func Default() *Pongo2Render {
+	return New(RenderOptions{
+		TemplateDir: "templates",
+		ContentType: "text/html; charset=utf-8",
+	})
+}
+
+// Instance should return a new Pongo2Render struct per request and prepare
+// the template by either loading it from disk or using pongo2's cache.
+func (p Pongo2Render) Instance(name string, data interface{}) render.Render {
+	var template *pongo2.Template
+	filename := path.Join(p.Options.TemplateDir, name)
+
+	// always read template files from disk if in debug mode, use cache otherwise.
+	if gin.Mode() == "debug" {
+		template = pongo2.Must(pongo2.FromFile(filename))
+	} else {
+		template = pongo2.Must(pongo2.FromCache(filename))
+	}
+
+	return Pongo2Render{
+		Template: template,
+		Context:  data.(pongo2.Context),
+		Options:  p.Options,
+	}
+}
+
+// Render should render the template to the response.
+func (p Pongo2Render) Render(w http.ResponseWriter) error {
+	p.WriteContentType(w)
+	err := p.Template.ExecuteWriter(p.Context, w)
+	return err
+}
+
+// WriteContentType should add the Content-Type header to the response
+// when not set yet.
+func (p Pongo2Render) WriteContentType(w http.ResponseWriter) {
+	header := w.Header()
+	if val := header["Content-Type"]; len(val) == 0 {
+		header["Content-Type"] = []string{p.Options.ContentType}
+	}
+}
+```
+
+
   
 
 
