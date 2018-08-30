@@ -204,6 +204,14 @@ func (p *Protocol) Error(code int, msg string) *Protocol {
 	return p
 }
 
+type Auth struct {
+	Auth string `json:"auth"`
+}
+
+func (a *Auth) Valide() bool {
+	return a.Auth != ""
+}
+
 // AuthLimit 认证
 func AuthLimit() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -212,6 +220,7 @@ func AuthLimit() gin.HandlerFunc {
 		if c.Query("auth") == "" {
 			c.AbortWithStatusJSON(http.StatusOK, (&Protocol{}).Error(http.StatusOK, ERROR_AUTH_LIMIT))
 		}
+		fmt.Println("Abort 也会执行到这里Run here")
 	}
 }
 
@@ -252,20 +261,49 @@ func Future() gin.HandlerFunc {
 func Vote() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		//  这里处理业务需求
-		fmt.Println("this is in Future")
+		fmt.Println("this is in Vote")
 		setUnitFn(c, func(m *sync.Map) {
 			fmt.Println("this is Vote UnitFn")
-
 		})
 	}
 }
 
-// HTML  使用HTML 展示数据
+// Parallel  并行处理
+func Parallel(handlers ...gin.HandlerFunc) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		fmt.Println("this is in Parallel")
+		for _, handler := range handlers {
+			handler(c)
+		}
+		var tasks = getUnitFn(c)
+		parallel := tasks[len(tasks)-len(handlers):]
+		tasks_origin := tasks[:len(tasks)-len(handlers)]
+		fmt.Println(len(tasks), len(parallel), len(handlers))
+
+		parallelTask := func(m *sync.Map) {
+			var group = &sync.WaitGroup{}
+			for i := 0; i < len(parallel); i++ {
+				group.Add(1)
+				go func(i int) {
+					parallel[i](m)
+					group.Done()
+				}(i)
+			}
+			group.Wait()
+			fmt.Println("Parallel is Done")
+		}
+		tasks_origin.Push(parallelTask)
+		c.Set(STORE, tasks_origin)
+	}
+}
+
+// String  使用HTML 展示数据
 func String(text string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		//  这里处理业务需求
 		fmt.Println("this is in HTML. String is  :", text)
 		handlerChain := getUnitFn(c)
+		fmt.Println(handlerChain)
 		parallel(handlerChain, &sync.Map{})
 		c.String(http.StatusOK, text)
 	}
@@ -276,6 +314,8 @@ func JSON() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		//  这里处理业务需求
 		fmt.Println("this is in JSON")
+		handlerChain := getUnitFn(c)
+		parallel(handlerChain, &sync.Map{})
 		c.JSON(http.StatusOK, (&Protocol{}).SetData("Hello testing."))
 	}
 }
@@ -285,7 +325,8 @@ func main() {
 
 	admin := engine.Group("/admin", AuthLimit())
 	{
-		admin.GET("/index", News(), Spot(), Future(), String("index is ok"))
+		admin.GET("/index", News(), Spot(), Future(), Vote(), String("index is ok"))
+		admin.GET("/parallel", News(), Parallel(Spot(), Future()), Vote(), String("index is ok"))
 		admin.GET("/vote", News(), Spot(), Vote(), String("vote is ok alse"))
 	}
 
@@ -293,8 +334,11 @@ func main() {
 	{
 		api.GET("/vote", Vote(), JSON())
 	}
+
 	engine.Run(":8080")
 }
+
+// utils  工具
 
 func setUnitFn(c *gin.Context, unit UnitFunc) {
 	var handlerChain UnitFuncs
@@ -318,17 +362,20 @@ func getUnitFn(c *gin.Context) UnitFuncs {
 	return handlerChain
 }
 
+// 简单 parallel
 func parallel(tasks UnitFuncs, m *sync.Map) {
 	var group = &sync.WaitGroup{}
 	for i := 0; i < len(tasks); i++ {
 		group.Add(1)
 		go func(i int) {
+			fmt.Println("this index is ", i)
 			tasks[i](m)
 			group.Done()
 		}(i)
 	}
 	group.Wait()
 }
+
 
  ```
 
