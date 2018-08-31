@@ -58,7 +58,7 @@ func AuthLimit() gin.HandlerFunc {
 		//  这里处理业务需求
 		fmt.Println("this is in AuthLimit")
 		if c.Query("auth") == "" {
-			c.AbortWithStatusJSON(http.StatusOK, (&Protocol{}).Error(http.StatusOK, ERROR_AUTH_LIMIT))
+			c.AbortWithStatusJSON(http.StatusOK, (&Protocol{}).Error(http.StatusFound, ERROR_AUTH_LIMIT))
 		}
 		fmt.Println("Abort 也会执行到这里Run here")
 	}
@@ -71,6 +71,7 @@ func News() gin.HandlerFunc {
 		fmt.Println("this is in News")
 		setUnitFn(c, func(m *sync.Map) {
 			fmt.Println("this is News UnitFn")
+			//
 		})
 	}
 }
@@ -181,13 +182,12 @@ func main() {
 	api := engine.Group("/api", AuthLimit())
 	{
 		api.GET("/vote", Vote(), JSON())
+		api.GET("/spot", Spot(), News(), JSON())
 	}
-
 	engine.Run(":8080")
 }
 
 // utils  工具
-
 func setUnitFn(c *gin.Context, unit UnitFunc) {
 	var handlerChain UnitFuncs
 	if fns, exites := c.Get(STORE); exites {
